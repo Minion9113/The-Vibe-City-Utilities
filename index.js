@@ -6,7 +6,10 @@ const Fs = require('fs')
 const bot = require("discord.js")
 const db = require('quick.db')
 const mongoose = require("mongoose");
-
+const Client = new Discord.Client({disableEveryone: true});
+const message = require ("discord.js")
+const MessageEmbed = require ("discord.js")
+const newMessageEmbed = require("discord.js")
 client.on('ready',  async() => {
     console.log('I am online and ready to listen to commands!')
     
@@ -146,28 +149,34 @@ if(number >= 50) {
  
 })
 
-client.on('guildMemberAdd' , async(member) => {
-    var warnsJSON = JSON.parse(Fs.readFileSync('./warnInfo.json'))
-    warnsJSON[member.id] = {
-         warns: 0
-    }
-    
-    Fs.writeFileSync('./warnInfo.json' , JSON.stringify(warnsJSON))
-    
-    const WelcomeChannel = member.guild.channels.cache.find(c => c.name === 'join-and-leave-log')
-    
-    const serverIcon = member.guild.iconURL({dynamic: true})
-    const memberCount = member.guild.members.cache.filter(m => !m.user.bot).size
-    var embed = new Discord.MessageEmbed()
-    .setColor('GREEN')
-    .setTitle(`${member.user.username}, Welcome to ${member.guild.name}`)
-    .setDescription('read the rules and then verify!')
-    .setThumbnail(serverIcon)
-    WelcomeChannel.send(embed)
+
+client.on('guildMemberAdd', async(member) => { // this event gets triggered when a new member joins the server!
+    // Firstly we need to define a channel
+    // either using .get or .find, in this case im going to use .get()
+    const Channel = member.guild.channels.cache.get('699012645201641544') //insert channel id that you want to send to
+    //making embed
+    const embed = new Discord.MessageEmbed()
+        .setTitle('New Member')
+        .setDescription(`**${member.displayName}** welcome to **${member.guild.name}**, we now have **${member.guild.memberCount} members!**`)
+  .setColor('RED')
+    // sends a message to the channel
+    Channel.send(embed)
+})
+client.on('guildMemberRemove', async(member) => { // this event gets triggered when a new member leaves the server!
+    // Firstly we need to define a channel
+    // either using .get or .find, in this case im going to use .get()
+    const Channel = member.guild.channels.cache.get('699012645201641544') //insert channel id that you want to send to
+    //making embed
+    const embed = new Discord.MessageEmbed()
+        .setTitle('A member left the server :(')
+        .setDescription(`**${member.displayName}** has left** ${member.guild.name}**, we now have **${member.guild.memberCount} members!**`)
+  .setColor('RED')
+  // sends a message to the channel
      
-    const addRole = member.guild.roles.cache.find(r => r.name === 'Staff Team')
+    const addRole = member.guild.roles.cache.find(r => r.name === 'Member')
     member.roles.add(addRole)
     })
+     
    
     // mongoose
     const mongooseConnectionString = process.env.mongooseConnectionString;
@@ -176,5 +185,76 @@ client.on('guildMemberAdd' , async(member) => {
     mongoose
         .connect(mongooseConnectionString)
         .then(() => console.log("Connected to mongodb"));
+
+const usersMap = new Map();
+const LIMIT = 5;
+const TIME = 7000;
+const DIFF = 3000;
+
+client.on('message', async(message) => {
+    if(message.author.bot) return;
+    if(usersMap.has(message.author.id)) {
+        const userData = usersMap.get(message.author.id);
+        const { lastMessage, timer } = userData;
+        const difference = message.createdTimestamp - lastMessage.createdTimestamp;
+        let msgCount = userData.msgCount;
+        console.log(difference);
+
+        if(difference > DIFF) {
+            clearTimeout(timer);
+            console.log('Cleared Timeout');
+            userData.msgCount = 1;
+            userData.lastMessage = message;
+            userData.timer = setTimeout(() => {
+                usersMap.delete(message.author.id);
+                console.log('Removed from map.')
+            }, TIME);
+            usersMap.set(message.author.id, userData)
+        }
+        else {
+            ++msgCount;
+            if(parseInt(msgCount) === LIMIT) {
+                let muterole = message.guild.roles.cache.find(role => role.name === 'Muted');
+                if(!muterole) {
+                    try{
+                        muterole = await message.guild.roles.create({
+                            name : "Muted",
+                            permissions: []
+                        })
+                        message.guild.channels.cache.forEach(async (channel, id) => {
+                            await channel.createOverwrite(muterole, {
+                                SEND_MESSAGES: false,
+                                ADD_REACTIONS : false
+                            })
+                        })
+                    }catch (e) {
+                        console.log(e)
+                    }
+                }
+                message.member.roles.add(muterole);
+                message.channel.send('You have been muted for Spamming!');
+                setTimeout(() => {
+                    message.member.roles.remove(muterole);
+                    message.channel.send('You have been unmuted!')
+                }, TIME);
+            } else {
+                userData.msgCount = msgCount;
+                usersMap.set(message.author.id, userData);
+            }
+        }
+    }
+    else {
+        let fn = setTimeout(() => {
+            usersMap.delete(message.author.id);
+            console.log('Removed from map.')
+        }, TIME);
+        usersMap.set(message.author.id, {
+            msgCount: 1,
+            lastMessage : message,
+            timer : fn
+        });
+    }
+})
+
 
         client.login(config.token)
